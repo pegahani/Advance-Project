@@ -10,7 +10,7 @@ and policy_iteration algorithms."""
 
 from sys import maxint
 import random
-from itertools import product, izip, count, repeat
+from itertools import product, izip, count, repeat, starmap, islice, ifilter
 import math
 from toolz import first
 from collections import defaultdict
@@ -32,7 +32,9 @@ class VVMdp:
                  _startingstate,
                  _transitions,  # dictionary of key:values   (s,a,s):proba
                  _rewards,  # dictionary of key:values   s: vector of rewards
-                 _gamma=.9):
+                 _gamma=.9, _lambda = None):
+
+        self._lambda = _lambda
 
         try:
             states = sorted(
@@ -457,6 +459,44 @@ def make_simulate_mdp(n_states, n_actions, _lambda, _r):
     simulate_mdp.set_Lambda(_lambda)
 
     return simulate_mdp
+
+
+#***********Yann code**************
+def make_simulate_mdp_Yann(n_states, n_actions, _lambda, _r=None):
+    """ Builds a random MDP.
+        Each state has ceil(log(nstates)) successors.
+        Reward vectors are permutations of [1,0,...,0]
+    """
+
+    nsuccessors = int(math.ceil(math.log1p(n_states)))
+    gauss_iter  = starmap(random.gauss,repeat((0.5,0.5)))
+    _t = {}
+
+    for s,a in product(range(n_states), range(n_actions)):
+
+        next_states = random.sample(range(n_states), nsuccessors)
+        probas =  np.fromiter(islice(ifilter(lambda x: 0 < x < 1 ,gauss_iter),nsuccessors), ftype)
+
+        _t.update(  {(s,a,s2):p for s2,p in izip(next_states, probas/sum(probas) )  }  )
+
+    if _r is None:
+        _r = {i:np.random.permutation([1]+[0]*(len(_lambda)-1)) for i in range(n_states)}
+
+    assert len(_r[0])==len(_lambda),"Reward vectors should have same length as lambda"
+
+    return VVMdp(
+        _startingstate= set(range(n_states)),
+        _transitions= _t,
+        _rewards= _r ,
+        _gamma= 0.95,
+        _lambda=_lambda)
+
+#***********Yann code**************
+
+
+
+
+
 
 
 #******************************** my code for simulating a VVmdp ****************************
