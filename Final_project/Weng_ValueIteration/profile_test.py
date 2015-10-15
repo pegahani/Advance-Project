@@ -1,73 +1,31 @@
-import profile
-import operator
-import numpy as np
-ftype = np.float32
+from ValueIteration import *
 
 
-class memoize:
-    # from http://avinashv.net/2008/04/python-decorators-syntactic-sugar/
-    def __init__(self, function):
-        self.function = function
-        self.memoized = {}
+if __name__ == '__main__':
 
-    def __call__(self, *args):
-        try:
-            return self.memoized[args]
-        except KeyError:
-            self.memoized[args] = self.function(*args)
-            return self.memoized[args]
+    _state, _action, _d = 3, 2, 2
 
+    _Lambda_inequalities = generate_inequalities(_d)
+    _lambda_rand = interior_easy_points(_d)
 
-@memoize
-def fib(n):
-    # from http://en.literateprograms.org/Fibonacci_numbers_(Python)
-    if n == 0:
-        return 0
-    elif n == 1:
-        return 1
-    else:
-        return fib(n-1) + fib(n-2)
+    print "_lambda_rand", _lambda_rand
 
-def fib_seq(n):
-    seq = [ ]
-    if n > 0:
-        seq.extend(fib_seq(n-1))
-    seq.append(fib(n))
-    return seq
+    #_r = my_mdp.generate_random_reward_function(_state, _action, _d)
+    #m = my_mdp.make_simulate_mdp(_state, _action, _lambda_rand,None)
+    m = my_mdp.make_simulate_mdp_Yann(_state, _action, _lambda_rand,None)
+    print 'm', m
 
+    print 'm.rewards', m.rewards
+    print 'm.transitions', m.transitions
 
-def clean_Points(_points):
-
-        print '_points before'
-        print _points
-
-        _points_zero_rows = []
-        rows = _points.shape[0]
-
-
-        for r in range(rows):
-            if np.all(_points[r,:] == 0):
-                _points_zero_rows.append(r)
-
-        counter = 0
-        for r in _points_zero_rows:
-            _points = np.delete(_points, (r-counter), axis=0 )
-            counter+=1
-
-        print '_points after'
-        print _points
-
-        return _points
-
-
-
-p = np.array([[  1.60535183e-05 , -2.27292385e-05],
- [  3.34223136e-02 , -3.59819755e-02],
- [ 0.00000000e+00  , 0.00000000e+00],
- [  1.54177360e-05 , -2.17358283e-05],
- [ -5.73247299e-02 ,  1.12755699e-02],
- [  0.00000000e+00  , 0.00000000e+00]])
-
-
-clean_Points(p)
-
+    # w = Weng(m, _lambda_rand, _Lambda_inequalities)
+    # w.setStateAction()
+    #
+    # print w.value_iteration_with_advantages(_epsilon=0.001, k=100000, noise= None, cluster_error = 0.01, threshold = 0.0001)
+    #
+    # m.set_Lambda(_lambda_rand)
+    # Uvec = m.policy_iteration()
+    # exact = m.initial_states_distribution().dot(Uvec)
+    #
+    #
+    # print 'exact', exact
