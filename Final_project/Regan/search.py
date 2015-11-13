@@ -83,17 +83,16 @@ def dot_product(lista, listb):
 
 if __name__ == '__main__':
 
-    log1 = open("exact_response" + ".txt", "w")
-    na = 5
+    log1 = open("exact_r" + ".txt", "w")
+    na = 100
     d = 2
 
-    average_on = 10
+    average_on = 1 #10
 
-    iterate_v_propagation = 100
     _cluster_v_bar_epsilon = 0.001
+    epsilon_error = 0.1
 
-
-    for n in range(2,5,2):
+    for n in range(2, 3, 1):
 
         time_gather_V_bars = []
         time_find_V_optimal = []
@@ -109,20 +108,26 @@ if __name__ == '__main__':
             Uvec = m.policy_iteration()
             exact = m.initial_states_distribution().dot(Uvec)
 
-            p = Problem.Problem(initial= [{s:[random.randint(0,na-1)] for s in range(n)}, np.zeros(d, dtype=ftype), np.zeros((n,d),dtype=ftype)],
-                         _mdp=m, _cluster_error= 0.1, _epsilon=0.00001)
-            v_prog = propagation_V.propagation_V(m= m, d = d, cluster_v_bar_epsilon = _cluster_v_bar_epsilon)
+            p = Problem.Problem(initial=[{s:[random.randint(0,na-1)] for s in range(n)}, np.zeros(d, dtype=ftype), np.zeros((n,d),dtype=ftype)],
+                         _mdp=m, _cluster_error=0.1, _epsilon=0.00001)
+            v_prog = propagation_V.propagation_V(m=m, d=d, cluster_v_bar_epsilon = _cluster_v_bar_epsilon, epsilon_error = epsilon_error)
 
             start_time_gather_V_bars = time.time()
-            V_vectors = v_prog.convex_hull_search_better(p, iterate_v_propagation)
+            V_vectors = v_prog.convex_hull_search(p)
             time_gather_V_bars.append(time.time() - start_time_gather_V_bars)
+
+            print >> log1, 'V_vectors', V_vectors
+            print >> log1, "exact", exact
+            log1.flush()
 
             V = V_bar_search.V_bar_search(_mdp= m, _V_bar=V_vectors, lam_random= m.get_lambda())
 
             start_time_find_V_optimal = time.time()
             v_opt = V.v_optimal()
+            print >> log1, 'v_opt', v_opt
+            log1.flush()
             time_find_V_optimal.append(time.time() - start_time_find_V_optimal)
-
+            
             number_asked_queries.append(V.query_number)
 
             t1 =  np.dot( v_opt, np.array(_lambda_rand) )
@@ -132,8 +137,6 @@ if __name__ == '__main__':
 
 
         print >> log1, '-----------------------'
-        print >> log1, iterate_v_propagation,'-th', 'iteration for |states|=', n
-        log1.flush()
 
         print >> log1,'queries=', np.mean(number_asked_queries)
         log1.flush()

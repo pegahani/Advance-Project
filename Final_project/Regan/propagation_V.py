@@ -8,15 +8,20 @@ import scipy.spatial
 import advantage
 from scipy.spatial import ConvexHull
 import scipy.cluster.hierarchy as hac
+from scipy.spatial import Delaunay
+
+from scipy.spatial.distance import cdist as linfDistance
+
 
 ftype = np.float32
 
 class propagation_V:
 
-    def __init__(self, m, d, cluster_v_bar_epsilon):
+    def __init__(self, m, d, cluster_v_bar_epsilon, epsilon_error):
         self.m = m
         self.d = d
         self.cluster_v_bar_epsilon = cluster_v_bar_epsilon
+        self.epsilon_error = epsilon_error
 
     def explored_contain(self, child, _explored):
         check = False
@@ -173,13 +178,16 @@ class propagation_V:
 
     def frontier_convex_hull(self, frontier):
         """
-        gets frontier from our_data_struc type and returns back get_frontier_convex_hull_vertices function result
+        gets frontier from our_data_struc type and returns back vertices of the generated convex hull on frontier V_bar
+        members. in fact, it returns back indexes of these vertices.
         :param frontier: our_data_struc type
         :return: indexes of frontier.A inside the modified convex hull after get rid of very close V_bar vectors
         """
-        cluster_v_bar_epsilon= self.cluster_v_bar_epsilon
+        print "****************************************"
 
+        cluster_v_bar_epsilon = self.cluster_v_bar_epsilon
         index_list = self.get_frontier_convex_hull_vertices(frontier.A)
+
         index_list.remove(len(frontier.A))
 
         Points = []
@@ -187,6 +195,7 @@ class propagation_V:
             Points.append(frontier.A[item].state[1])
 
         points_array = np.array(Points)
+
         z = hac.linkage(points_array, metric='cosine', method='complete')
         labels = hac.fcluster(z, cluster_v_bar_epsilon, criterion='distance')
 
@@ -281,90 +290,158 @@ class propagation_V:
         return [val for val in explored.itervalues()]
 
 
-    def convex_hull_search(self, prob, iteraion_number):
+    def make_convex_hull(self, P_initial, hull_vertices):
+        """
+        makes convex hull of given Points
+        :param P_initial: matrix of many d-dimensional rows
+        :return: pair of updated P_initial and list of vertices row index in P_initial
+        """
+
+        try:
+            hull = ConvexHull(P_initial)
+            hull_vertices = list(hull.vertices)
+            P_initial = P_initial[hull_vertices, :]
+        except scipy.spatial.qhull.QhullError:
+            print 'convex hull is not available'
+            P_initial = P_initial
+            hull_vertices = hull_vertices
+
+        if not (all(P_initial[0, :] == [0] * self.d)):
+            P_initial = np.insert(P_initial, 0, np.zeros(shape=(1, self.d)), 0)
+            hull_vertices.append(0)
+
+        return (P_initial, hull_vertices)
+
+    def in_hull(self, p, hull):
+        """
+        Test if point `p` is in `hull`
+
+        `p` should be a `NxK` coordinates of `N` points in `K` dimensions
+        `hull` is either a scipy.spatial.Delaunay object or the `MxK` array of the
+        coordinates of `M` points in `K`dimensions for which Delaunay triangulation
+        will be computed
+        """
+        q = np.array([p])
+
+        if not isinstance(hull,Delaunay):
+            try:
+                hull = Delaunay(hull)
+            except scipy.spatial.qhull.QhullError:
+                return False
+
+        return hull.find_simplex(q)>=0
+
+    def epsilon_close_convex_hull(self, V_d, P_inintial, epsilon):
+        """
+        the function gets vector and check if there is a vector inside P_initial which is epsilon close to V_d
+        :param V_d: d dimensional vector
+        :param P_inintial: array of d dimensional rows
+        :return: True or False
+        """
+        for item in xrange(P_inintial.shape[0]):
+            dist = linfDistance([np.array(P_inintial[item, :])], [np.array(V_d)], 'chebyshev')[0,0]
+            if dist < epsilon:
+                return True
+
+        return False
+
+    def check_epsilon(self, V_d, P_intial, epsilon):
+        """
+        this function gets a new d dimensional V_d and checks if V_d is inside Conv(P_initial) or
+        is it p in P_initial in which ||p-V_d|| <= epsilon and returns True. if non of these situations satisfy,it
+        returns false.
+        :param V_d: a d dimensional vector
+        :param P_intial: array of several d-dimensional vectors
+        :param epsilon: the epsilon error for checking
+        :return: True or False
+        """
+
+        #if vector is inside old convex hull
+        if self.in_hull(V_d, P_intial):
+            return True
+        #if vector is epsilon close to a vector in P_initial
+        if self.epsilon_close_convex_hull(V_d, P_intial, epsilon):
+            return True
+
+        return False
+
+    def update_convex_hull_epsilon(self, P_initial, frontier, hull_vertices, problem):
+        """
+        this function gets set of current polytope vertices, generates new points using clustering on advantages
+        and make a new convex hull of them.
+        :param P_initial: matrix of d-dimensional rows
+        :param frontier: queue of type my_data_struc includes all nodes for extension
+        :return: pairs of (P_initial, frontier) in which P_initial includes 0 vector.
+        """
+
+        frontier_addition = utils.my_data_struc()
+        P_new = P_initial
+
+        for node in frontier.A:
+            for child in node.expand(problem= problem):
+                if not (self.check_epsilon(child.state[1], P_initial, self.epsilon_error)):
+                    frontier_addition.append(child)
+                    P_new = np.vstack([P_new, child.state[1]])
+
+        length_hull_vertices = len(hull_vertices)
+        counter = 0
+        for node in frontier_addition.A:
+            frontier.append(node)
+            hull_vertices.append(length_hull_vertices+counter)
+            counter += 1
+
+        temp_convex = self.make_convex_hull(P_new, hull_vertices)
+        P_initial = temp_convex[0]
+        hull_vertices = temp_convex[1]
+
+        frontier.update([item-1 for item in hull_vertices if item-1 >= 0])
+
+        return (P_initial, frontier, hull_vertices)
+
+    def convex_hull_search(self, prob):
         """
         this function gets a problem as tree of nodes each node is pair of policy and V_bar as ({0:2, 1:0, 2:1, 3:2, 4:1}, [0.1,0.25])
         and try to propagate all v_bar using extending node in each iteration and take their vertices of the optimal convex hull.
         :param problem: tree of nodes each node is pair of policy and V_bar as ({0:2, 1:0, 2:1, 3:2, 4:1}, [0.1,0.25])
-        :return: returns set of nondominated v_bar vectors: vectors of dimension d
+        :return: returns set of approximated non-dominated v_bar vectors: vectors of dimension d
         """
 
+        P_initial= np.zeros(shape=(1, self.d))
         m = self.m
-        obs = open("observe-search" + ".txt", "w")
         frontier = utils.my_data_struc()
 
         for i in range(self.d):
-            m.set_Lambda(np.array([ 1 if j==i else 0 for j in xrange(self.d)]))
+            m.set_Lambda(np.array([1 if j==i else 0 for j in xrange(self.d)]))
             Uvec_n_d = m.policy_iteration()
             v_d = m.initial_states_distribution().dot(Uvec_n_d)
             n = Problem.Node([self.produce_policy(m.best_policy(Uvec_n_d)), v_d, Uvec_n_d])
             frontier.append(n)
 
-        tempo = self.frontier_convex_hull(frontier)
-        index_list, check = tempo[0], tempo[1]
-        index_list.remove(len(frontier.A))
+        for item in range(self.d):
+            P_initial = np.vstack([P_initial, frontier.A[item].state[1]])
 
-        # if check:
-        #     frontier.update(index_list)
+        hull_vertices = range(self.d + 1)
 
-        explored = self.fill_explored(frontier.A, [])
-        best_improve_for_node = 1000.0
+        #make convex hull of points *******************************
+        temp_convex = self.make_convex_hull(P_initial, hull_vertices)
+        P_initial = temp_convex[0]
+        hull_vertices = temp_convex[1]
+        #************************************************************
+        frontier.update([item-1 for item in hull_vertices if item-1 >= 0])
 
-        print >> obs, "explored", explored
-        obs.flush()
+        temp = self.update_convex_hull_epsilon(P_initial, frontier, hull_vertices, prob)
+        P_new = temp[0]
+        frontier = temp[1]
+        hull_vertices = temp[2]
 
-        #iteration = 0
-        # while best_improve_for_node > problem.epsilon :
-        #     print >> obs, 'best_improve_for_node', best_improve_for_node
-        #     iteration += 1
-        for iteration in range(iteraion_number):
-            print >> obs, 'iteraion---------', iteration
-            obs.flush()
-            print >> obs, 'best_improve_for_node', best_improve_for_node
-            obs.flush()
+        #while P_initial and P_new are not equal
+        while not (np.array_equal(P_initial, P_new)):
+        #for i in range(1000):
+            P_initial = P_new
+            temp = self.update_convex_hull_epsilon(P_initial, frontier, hull_vertices, prob)
+            P_new = temp[0]
+            frontier = temp[1]
+            hull_vertices = temp[2]
 
-            #print >> obs, "explored", explored
-            #obs.flush()
-
-            frontier_addition = utils.my_data_struc()
-            max_improvement_list = []
-
-            parent_list_v_d = []
-
-            for node in frontier.A:
-
-                parent_list_v_d.append(node.state[1])
-                node. inside_convex = False
-
-                max_improvement = -100.0
-                just_iterate_once = 0
-                for child in node.expand(problem= prob):
-                    #while just_iterate_once < 1:
-                        #just_iterate_once+= 1
-                        improv_new = child.improvement
-                        frontier_addition.append(child)
-                        if improv_new > max_improvement:
-                            max_improvement = improv_new
-
-                max_improvement_list.append(max_improvement)
-
-            best_improve_for_node = max(max_improvement_list)
-
-            for node in frontier_addition.A:
-                frontier.append(node)
-
-            tempo = self.frontier_convex_hull(frontier)
-            print >> obs, "difference between number of elements before and after convex hull", len(frontier.A)-len(tempo)
-            obs.flush()
-            index_list, check = tempo[0], tempo[1]
-            index_list.remove(len(frontier.A))
-
-            # if check:
-            #     frontier.update(index_list)
-
-            explored = self.fill_explored(frontier.A, parent_list_v_d)
-
-            print >> obs, "|explored|=", len(explored)
-            obs.flush()
-
-        return [val for val in explored.itervalues()]
+        print 'P_new', P_new
+        return [val for val in P_new[1:]]

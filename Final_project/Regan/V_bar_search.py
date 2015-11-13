@@ -397,7 +397,7 @@ class V_bar_search:
     def v_optimal(self):
         """
         this function returns the optimal V_bar for given set of optimal V_ds: self.V_bar
-        :return: optimal V_bar o dimension d
+        :return: optimal V_bar of dimension d
         """
         opt = open("observe-optimal" + ".txt", "w")
 

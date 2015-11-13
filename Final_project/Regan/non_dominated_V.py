@@ -269,6 +269,14 @@ class no_dominated:
         return check
 
     def generate_non_dominated_V(self, epsilon=0.1, cluster_error=0.1, threshold = 0.1):
+        """
+        This function returns back an approximated set of non-dominated vectors for a mdp according to three given
+        accuracy thresholds
+        :param epsilon:
+        :param cluster_error: the error of generating clusters on advantages
+        :param threshold:
+        :return:
+        """
 
         log = open("tests.txt", "w")
 
@@ -329,39 +337,3 @@ class no_dominated:
         print >> log, "final final answer"
         print >> log, non_dominated_Udot_dic
         return non_dominated_Udot_dic
-
-def generate_inequalities(_d):
-    inequalities = []
-
-    for x in itertools.combinations( xrange(_d), 1 ) :
-        inequalities.append([0] + [ 1 if i in x else 0 for i in xrange(_d) ])
-        inequalities.append([1] + [ -1 if i in x else 0 for i in xrange(_d) ])
-
-    return inequalities
-
-
-def interior_easy_points(dim):
-    #dim = len(self.points[0])
-    l = []
-    for i in range(dim):
-        l.append(random.uniform(0.0, 1.0))
-    return l
-
-
-
-_state = 5
-_action = 3
-_d = 2
-_Lambda_inequalities = generate_inequalities(_d)
-_lambda_rand = interior_easy_points(_d)
-#_lambda_rand = [0.5, 0.5]
-
-_r = my_mdp.generate_random_reward_function(_state, _action, _d)
-
-print 'rewards', _r
-
-m = my_mdp.make_simulate_mdp(_state, _action, _lambda_rand, _r)
-non_dom = no_dominated(m, _lambda_rand)
-non_dom.setStateAction()
-
-print non_dom.generate_non_dominated_V(epsilon=0.1, cluster_error=0.1, threshold = 0.1)
