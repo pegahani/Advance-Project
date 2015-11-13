@@ -998,7 +998,7 @@ if __name__ == '__main__':
 
         return (average_queries, average_errors)
 
-    iteration_overall = 2
+    iteration_overall = 10
 
     _state = 3
     _action = 2
