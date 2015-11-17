@@ -96,7 +96,7 @@ class Weng:
 
         return p
 
-    def  pulp_K_dominance_check(self, _V_best, Q):
+    def pulp_K_dominance_check(self, _V_best, Q):
         ineq = self.Lambda_inequalities
         _d = len(_V_best)
 
@@ -108,7 +108,7 @@ class Weng:
 
         prob += lpSum([lambda_variables[i] * (_V_best[i]-Q[i]) for i in range(_d)])
 
-        #prob.writeLP("show-Ldominance.lp")
+        prob.writeLP("show-Ldominance.lp")
 
         status = prob.solve()
         #LpStatus[status]
@@ -208,10 +208,12 @@ class Weng:
 
         if not noise:
             if self.Lambda.dot(_V_best) > self.Lambda.dot(Q):
+                print '_V_best, Q', _V_best, Q, 'query', bound+map(operator.sub, _V_best, Q)
                 self.Lambda_inequalities.append(bound+map(operator.sub, _V_best, Q))
                 return _V_best
             else:
                 self.Lambda_inequalities.append( bound+map(operator.sub, Q, _V_best))
+                print '_V_best, Q', _V_best, Q, 'query', bound+map(operator.sub, Q, _V_best)
                 return Q
         else:
             noise_vect = self.generate_noise(len(self.Lambda), noise)
@@ -254,6 +256,9 @@ class Weng:
     #***********************Yann***********************
 
     def get_best(self, _V_best, Q, _noise):
+
+        if ( _V_best == Q).all():
+            return Q
 
         if self.pareto_comparison(_V_best, Q):
             return _V_best
@@ -407,8 +412,6 @@ class Weng:
         optimal value solution of algorithm.
         """
 
-        which_query_preferred = []
-
         n , na, d= self.mdp.nstates , self.mdp.nactions, self.mdp.d
         Uvec_old_nd = np.zeros( (n,d) , dtype=ftype)
 
@@ -419,15 +422,14 @@ class Weng:
         queries = []
 
         for t in range(k):
-            Uvec_nd = np.zeros((n,d) , dtype=ftype)
+            Uvec_nd = np.zeros((n,d), dtype=ftype)
 
             for s in range(n):
                 _V_best_d = np.zeros(d, dtype=ftype)
                 for a in range(na):
                     #compute Q function
-                    Q_d    = self.mdp.get_vec_Q(s, a, Uvec_old_nd)
+                    Q_d       = self.mdp.get_vec_Q(s, a, Uvec_old_nd)
                     _V_best_d = self.get_best(_V_best_d, Q_d, _noise= noise)
-                    which_query_preferred.append(_V_best_d)
 
                 Uvec_nd[s] = _V_best_d
 
@@ -443,14 +445,16 @@ class Weng:
             if delta <threshold:
                 queries.append(query_count)
                 vector_list_d.append(Uvec_final_d)
-                return (vector_list_d, queries)
+                return(vector_list_d, self.Lambda_inequalities)
+                #return (vector_list_d, queries)
                 #return (Uvec_final_d, self.query_counter_)
             else:
                 Uvec_old_nd = Uvec_nd
 
         queries.append(query_count)
         vector_list_d.append(Uvec_final_d)
-        return (vector_list_d, queries)
+        return(vector_list_d, self.Lambda_inequalities)
+        #return (vector_list_d, queries)
         #return (Uvec_final_d, self.query_counter_)
 
 #*******************************************************************************
@@ -799,14 +803,16 @@ class Weng:
             if delta < threshold:
                 queries.append(query_count)
                 list_v_d.append(best_v_d)
-                return (list_v_d, queries)
+                #return (list_v_d, queries)
+                return (list_v_d, self.Lambda_inequalities)
                 #return (best_v_d, self.query_counter_with_advantages)
             else:
                 v_d = best_v_d
 
         queries.append(query_count)
         list_v_d.append(best_v_d)
-        return (list_v_d, queries)
+        #return (list_v_d, queries)
+        return (list_v_d, self.Lambda_inequalities)
         #return (best_v_d, self.query_counter_with_advantages)
 
     def value_iteration_with_advantages_final(self, _epsilon=0.001, k=100000, noise=None, cluster_error = 0.1, threshold = 0.001):
@@ -942,26 +948,9 @@ def execution(_state, _action, _d, _noise):
     return output
 
 
-# #--------------------profiling the code-------------------------------
-#
-# import cProfile
-# if __name__ == '__main__':
-#
-#     _state, _action, _d = 3, 2, 2
-#
-#     _Lambda_inequalities = generate_inequalities(_d)
-#     _lambda_rand = interior_easy_points(_d)
-#
-#     _r = my_mdp.generate_random_reward_function(_state, _action, _d)
-#     m = my_mdp.make_simulate_mdp(_state, _action, _lambda_rand, _r)
-#     w = Weng(m, _lambda_rand, _Lambda_inequalities)
-#     w.setStateAction()
-#
-#
-#     cProfile.run( 'w.value_iteration_with_advantages(_epsilon=0.001, '
-#                   'k=100000, noise= None, cluster_error = 0.01, threshold = 0.0001)')
-#
-# #--------------------profiling the code-------------------------------
+
+
+
 
 
 
@@ -1195,32 +1184,3 @@ if __name__ == '__main__':
             # final.flush()
             # print >> final, "error_noise", np.mean(error_noise)
             # final.flush()
-
-
-
-
-
-
-#test code-----------------------------------------------------
-
-# if __name__ == '__main__':
-#
-#     _state, _action, _d = 3, 2, 2
-#
-#     _Lambda_inequalities = generate_inequalities(_d)
-#     _lambda_rand = interior_easy_points(_d)
-#
-#     _r = my_mdp.generate_random_reward_function(_state, _action, _d)
-#     m = my_mdp.make_simulate_mdp_Yann(_state, _action, _lambda_rand, _r)
-#     w = Weng(m, _lambda_rand, _Lambda_inequalities)
-#     w.setStateAction()
-#
-#
-#     final = open("result-state"+".txt", "w")
-#     print >> final, "final output value iteration with advantages--------", w.value_iteration_with_advantages(_epsilon=0.001, k=100000, noise= 0.5, cluster_error = 0.01, threshold = 0.0001)
-#     final.flush()
-#     _Lambda_inequalities = generate_inequalities(_d)
-#     w.reset(m, _lambda_rand, _Lambda_inequalities)
-#     print >> final, 'final output weng value iteration------------', w.value_iteration_weng(k=100000, noise=None, threshold=0.0001)
-
-#test code-----------------------------------------------------
