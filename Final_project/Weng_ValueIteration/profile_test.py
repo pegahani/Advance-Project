@@ -68,71 +68,89 @@ def draw_simple_line(list_inequality):
 
 if __name__ == '__main__':
 
-    _state, _action, _d = 3, 2, 2
+    erro_average_ma = []
+    query_average_ma = []
 
-    _Lambda_inequalities = generate_inequalities(_d)
-    _lambda_rand = interior_easy_points(_d)
+    erro_average_weng = []
+    query_average_weng = []
 
+    _state, _action, _d = 5, 2, 2
 
-    #_r = my_mdp.generate_random_reward_function(_state, _action, _d)
-    #m = my_mdp.make_simulate_mdp(_state, _action, _lambda_rand,None)
-    m = my_mdp.make_simulate_mdp_Yann(_state, _action, _lambda_rand, None)
+    for iteration in range(10):
 
-    w = Weng(m, _lambda_rand, _Lambda_inequalities)
-    w.setStateAction()
+        _Lambda_inequalities = generate_inequalities(_d)
+        _lambda_rand = interior_easy_points(_d)
 
-    m.set_Lambda(_lambda_rand)
-    Uvec = m.policy_iteration()
-    exact = m.initial_states_distribution().dot(Uvec)
+        #_r = my_mdp.generate_random_reward_function(_state, _action, _d)
+        #m = my_mdp.make_simulate_mdp(_state, _action, _lambda_rand,None)
+        m = my_mdp.make_simulate_mdp_Yann(_state, _action, _lambda_rand, None)
 
-    # output = w.value_iteration_with_advantages(_epsilon=0.001, k=100000, noise= None,
-    #                                            cluster_error = 0.01, threshold = 0.0001)
+        w = Weng(m, _lambda_rand, _Lambda_inequalities)
+        w.setStateAction()
 
-    output = w.value_iteration_with_advantages(_epsilon=0.001, k=100000, noise= 0.5,
-                                               cluster_error = 0.01, threshold = 0.0001)
+        m.set_Lambda(_lambda_rand)
+        Uvec = m.policy_iteration()
+        exact = m.initial_states_distribution().dot(Uvec)
 
-    _Lambda_inequalities = generate_inequalities(_d)
-    w.reset(m, _lambda_rand, _Lambda_inequalities)
-    #output_weng = w.value_iteration_weng(k=100000, noise=None, threshold=0.0001)
-    output_weng = w.value_iteration_weng(k=100000, noise=0.5, threshold=0.0001)
+        # output = w.value_iteration_with_advantages(_epsilon=0.001, k=100000, noise= None,
+        #                                            cluster_error = 0.01, threshold = 0.0001)
 
+        output = w.value_iteration_with_advantages(_epsilon=0.001, k=100000, noise= 0.5,
+                                                   cluster_error = 0.01, threshold = 0.0001)
 
-    print '***************************'
-    print "_lambda_rand", _lambda_rand
-
-    print output[1]
-    print 'vector length', len(output[1])
-
-    print output_weng[1]
-    print 'vector weng length', len(output_weng[1])
-
-    #draw_line(output[1], output_weng[1])
-    #draw_simple_line(output_weng[1])
-
-    print "***********************"
-    print 'exact', exact
-    print "vector list abvi", output[0]
-    print "vector list weng", output_weng[0]
-
-graph_weng = []
-for i in output_weng[0]:
-        differenece = linfDistance([np.array(i)], [np.array(exact)], 'chebyshev')[0,0]
-        graph_weng.append(differenece)
-
-graph_ma = []
-for i in output[0]:
-        differenece = linfDistance([np.array(i)], [np.array(exact)], 'chebyshev')[0,0]
-        graph_ma.append(differenece)
+        _Lambda_inequalities = generate_inequalities(_d)
+        w.reset(m, _lambda_rand, _Lambda_inequalities)
+        #output_weng = w.value_iteration_weng(k=100000, noise=None, threshold=0.0001)
+        output_weng = w.value_iteration_weng(k=100000, noise=0.5, threshold=0.0001)
 
 
-print 'graph ma', graph_ma
-print 'len(graph ma)', len(graph_ma)
-print 'graph_weng', graph_weng
-print 'len(graph_weng)', len(graph_weng)
+        print '***************************'
+        print "_lambda_rand", _lambda_rand
+
+        print output[1]
+        print 'vector length', len(output[1])
+
+        print output_weng[1]
+        print 'vector weng length', len(output_weng[1])
+
+        #draw_line(output[1], output_weng[1])
+        #draw_simple_line(output_weng[1])
+
+        print "***********************"
+        print 'exact', exact
+        print "vector list abvi", output[0]
+        print "vector list weng", output_weng[0]
+
+        graph_weng = []
+        for i in output_weng[0]:
+                differenece = linfDistance([np.array(i)], [np.array(exact)], 'chebyshev')[0,0]
+                graph_weng.append(differenece)
+
+        graph_ma = []
+        for i in output[0]:
+                differenece = linfDistance([np.array(i)], [np.array(exact)], 'chebyshev')[0,0]
+                graph_ma.append(differenece)
 
 
-draw_line(output[1], output_weng[1], _lambda_rand)
+        print 'graph ma', graph_ma
+        print 'len(graph ma)', len(graph_ma)
+        print 'graph_weng', graph_weng
+        print 'len(graph_weng)', len(graph_weng)
 
-plt.plot(range(1,len(graph_ma)+1), graph_ma, 'r')
-plt.plot(range(1,len(graph_weng)+1), graph_weng, 'b')
-plt.show()
+        erro_average_ma.append(graph_ma)
+        query_average_ma.append(range(1,len(graph_ma)+1))
+        erro_average_weng.append(graph_weng)
+        query_average_weng.append(range(1,len(graph_weng)+1))
+
+
+        draw_line(output[1], output_weng[1], _lambda_rand)
+
+        plt.plot(range(1,len(graph_ma)+1), graph_ma, 'r')
+        plt.plot(range(1,len(graph_weng)+1), graph_weng, 'b')
+        plt.show()
+
+    print 'erro_average_ma', erro_average_ma
+    print 'query_average_ma', query_average_ma
+
+    print 'erro_average_weng', erro_average_weng
+    print 'query_average_weng', query_average_weng
