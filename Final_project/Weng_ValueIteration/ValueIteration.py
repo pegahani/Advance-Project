@@ -21,19 +21,6 @@ except:
 
 ftype = np.float32
 
-class memoize:
-    # from http://avinashv.net/2008/04/python-decorators-syntactic-sugar/
-    def __init__(self, function):
-        self.function = function
-        self.memoized = {}
-
-    def __call__(self, *args):
-        try:
-            return self.memoized[args]
-        except KeyError:
-            self.memoized[args] = self.function(*args)
-            return self.memoized[args]
-
 class Weng:
 
     def __init__(self, _mdp, _lambda, _lambda_inequalities):
@@ -201,6 +188,25 @@ class Weng:
 
         return vector_noise
 
+
+    def is_already_exist(self, inequality_list, new_constraint):
+        """
+
+        :param inequality_list: list of inequalities. list of lists of dimension d+1
+        :param new_constraint: new added constraint to list of inequalities of dimension d+1
+        :return: True if new added constraint is already exist in list of constraints for Lambda polytope
+        """
+        if new_constraint in inequality_list:
+                return True
+        else:
+                for i in range(2*self.mdp.d , len(inequality_list)):
+
+                        devision_list = [np.float32(x/y) for x, y in zip(inequality_list[i], new_constraint)[1:]]
+                        if all( x == devision_list[0] for x in devision_list):
+                                return True
+
+        return False
+
     def Query(self, _V_best, Q, noise):
         bound = [0.0]
 
@@ -208,12 +214,17 @@ class Weng:
 
         if not noise:
             if self.Lambda.dot(_V_best) > self.Lambda.dot(Q):
-                print '_V_best, Q', _V_best, Q, 'query', bound+map(operator.sub, _V_best, Q)
-                self.Lambda_inequalities.append(bound+map(operator.sub, _V_best, Q))
+                new_constraints = bound+map(operator.sub, _V_best, Q)
+                if not self.is_already_exist(self.Lambda_inequalities, new_constraints):
+                    self.Lambda_inequalities.append(new_constraints)
+
                 return _V_best
+
             else:
-                self.Lambda_inequalities.append( bound+map(operator.sub, Q, _V_best))
-                print '_V_best, Q', _V_best, Q, 'query', bound+map(operator.sub, Q, _V_best)
+                new_constraints = bound+map(operator.sub, Q, _V_best)
+                if not self.is_already_exist(self.Lambda_inequalities, new_constraints):
+                    self.Lambda_inequalities.append(new_constraints)
+
                 return Q
         else:
             noise_vect = self.generate_noise(len(self.Lambda), noise)
@@ -235,10 +246,17 @@ class Weng:
 
         if not noise:
             if self.Lambda.dot(_V_best[1]) > self.Lambda.dot(Q[1]):
-                self.Lambda_inequalities.append(bound+map(operator.sub, _V_best[1], Q[1]))
+                new_constraints = bound+map(operator.sub, _V_best[1], Q[1])
+                if not self.is_already_exist(self.Lambda_inequalities, new_constraints):
+                    self.Lambda_inequalities.append(new_constraints)
+
                 return _V_best
+
             else:
-                self.Lambda_inequalities.append( bound+map(operator.sub, Q[1], _V_best[1]))
+                new_constraints = bound+map(operator.sub, _V_best[1], Q[1])
+                if not self.is_already_exist(self.Lambda_inequalities, new_constraints):
+                    self.Lambda_inequalities.append(new_constraints)
+
                 return Q
 
         noise_vect = self.generate_noise(len(self.Lambda), noise)
@@ -412,7 +430,9 @@ class Weng:
         optimal value solution of algorithm.
         """
 
-        n , na, d= self.mdp.nstates , self.mdp.nactions, self.mdp.d
+        sortie = open("delta_result"+".txt", "w")
+
+        n, na, d= self.mdp.nstates , self.mdp.nactions, self.mdp.d
         Uvec_old_nd = np.zeros( (n,d) , dtype=ftype)
 
         delta = 0.0
@@ -424,11 +444,19 @@ class Weng:
         for t in range(k):
             Uvec_nd = np.zeros((n,d), dtype=ftype)
 
+            print >> sortie,'************************'
+            print >> sortie, "iteratio t= ", t
+            sortie.flush()
+
             for s in range(n):
                 _V_best_d = np.zeros(d, dtype=ftype)
                 for a in range(na):
                     #compute Q function
                     Q_d       = self.mdp.get_vec_Q(s, a, Uvec_old_nd)
+
+                    print>> sortie, "Q_d,  _V_best_d, Q_d - _V_best_d", Q_d, _V_best_d, [0.0]+map(operator.sub, _V_best_d, Q_d)
+                    sortie.flush()
+
                     _V_best_d = self.get_best(_V_best_d, Q_d, _noise= noise)
 
                 Uvec_nd[s] = _V_best_d
