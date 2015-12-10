@@ -1,16 +1,16 @@
-import cplex
 import copy
 import timeit
 import operator
 from operator import add
 import random
+import cplex
+import itertools
 import numpy as np
-from pulp import *
 from scipy.spatial import ConvexHull
 import collections
 import scipy.spatial.qhull
 import scipy.cluster.hierarchy as hac
-from Regan import my_mdp
+
 
 try:
     from scipy.sparse import csr_matrix, dok_matrix
@@ -76,37 +76,45 @@ class Weng:
         #print "--before-- ",json.dumps(self.Lambda_inequalities)
 
         #c = self.feasibility_K_dominance_check(_V_best,Q)
-        p = self. pulp_K_dominance_check(_V_best,Q)
+        p = self. K_dominance_check(_V_best,Q)
         #assert p == c , "alert: pulp and feasibility disagree !!!"
 
         #print "--after-- ",json.dumps([self.Lambda_inequalities,( _V_best.tolist(), Q.tolist()),p]),","
 
         return p
 
-    def pulp_K_dominance_check(self, _V_best, Q):
-        ineq = self.Lambda_inequalities
+    def K_dominance_check(self, _V_best, Q):
+
+        ineqList = self.Lambda_inequalities
         _d = len(_V_best)
 
-        prob = LpProblem("Ldominance", LpMinimize)
-        lambda_variables = LpVariable.dicts("l", range(_d),lowBound=0.0, upBound=1.0)
 
-        for inequ in ineq:
-            prob += lpSum([inequ[j + 1] * lambda_variables[j] for j in range(0, _d)]) + inequ[0] >= 0
+        prob = cplex.Cplex()
+        prob.objective.set_sense(prob.objective.sense.minimize)
 
-        prob += lpSum([lambda_variables[i] * (_V_best[i]-Q[i]) for i in range(_d)])
+        ob = [ float(_V_best[j]-Q[j]) for j in range(0, _d)]
+        prob.variables.add(obj=ob,lb = [0.0]*_d,ub = [1.0]*_d)
 
-        prob.writeLP("show-Ldominance.lp")
+        prob.set_results_stream(None)
+        prob.set_log_stream(None)
 
-        status = prob.solve()
-        #LpStatus[status]
+        constr, rhs = [], []
 
-        result = value(prob.objective)
+        for inequ in ineqList:
+            c = [ [j,1.0*inequ[j + 1]] for j in range(0, _d)]
+            constr.append( zip(*c) )
+            rhs.append(-inequ[0])
+
+        prob.linear_constraints.add(lin_expr=constr, senses = "G"*len(constr),rhs = rhs)
+        prob.solve()
+
+        result = prob.solution.get_objective_value()
         if result < 0.0:
             return False
 
         return True
 
-    def feasibility_K_dominance_check(self, _V_best, Q,verb=False):
+    def feasibility_K_dominance_check(self, _V_best, Q, verb=False):
 
         ineqList = self.Lambda_inequalities
         _d = len(_V_best)
@@ -130,12 +138,12 @@ class Weng:
             constr.append( zip(*c) )
             rhs.append(-inequ[0])
 
-        c = [  (j,float(Q[j] - _V_best[j])) for j in range(0, _d)]
+        c = [ (j,float(Q[j] - _V_best[j])) for j in range(0, _d)]
         constr.append(zip(*c))
         #rhs.append(-0.000001)
         rhs.append(delta)
 
-        prob.linear_constraints.add(lin_expr = constr, senses = "G"*len(constr),rhs = rhs)
+        prob.linear_constraints.add(lin_expr=constr, senses = "G"*len(constr),rhs = rhs)
         prob.solve()
         status = prob.solution.get_status_string(prob.solution.get_status())
         assert status in ["infeasible","optimal"]," attention, cplex renvoie le code inconnu: "+status
@@ -296,39 +304,6 @@ class Weng:
 
         return query
 
-    # def get_best(self, _V_best, Q, _noise):
-    #
-    #     print "*************************first****************************"
-    #     print "_V_best, Q", _V_best, Q
-    #     print "Lambda inequalities", self.Lambda_inequalities
-    #     print "*****************************************************"
-    #
-    #
-    #     if self.pareto_comparison(_V_best, Q):
-    #         return _V_best
-    #
-    #     if self.pareto_comparison(Q, _V_best):
-    #         return Q
-    #
-    #     print "*************************second****************************"
-    #     print "_V_best, Q", _V_best, Q
-    #     print "Lambda inequalities", self.Lambda_inequalities
-    #     print "*****************************************************"
-    #
-    #     yes_query_no_check = self.yes_query_no_K_dominance_check(_V_best, Q, False)
-    #
-    #     if yes_query_no_check == -1:
-    #         return _V_best
-    #     elif yes_query_no_check == 1:
-    #         return Q
-    #     else:
-    #         query = self.Query(_V_best, Q, _noise)
-    #         #if this query is asked for value iteration with advantages
-    #         self.query_counter_ +=1
-    #         return query
-    #
-    #     return None
-
     #***********************Yann **************************
 
     def get_best_policies(self, _V_best, Q, _noise):
@@ -350,55 +325,7 @@ class Weng:
 
         return query
 
-    # def get_best_policies(self, _V_best, Q, _noise):
-    #
-    #     if self.pareto_comparison(_V_best[1], Q[1]):
-    #         return _V_best
-    #
-    #     if self.pareto_comparison(Q[1], _V_best[1]):
-    #         return Q
-    #
-    #     yes_query_no_check = self.yes_query_no_K_dominance_check(_V_best[1], Q[1])
-    #
-    #     if yes_query_no_check == -1:
-    #         return Q
-    #     elif yes_query_no_check == 1:
-    #         return _V_best
-    #     else:
-    #         query = self.Query_policies(_V_best, Q, _noise)
-    #         #if this query is asked for value iteration with advantages
-    #         self.query_counter_with_advantages+=1
-    #         return query
-    #
-    #     return None
-
     #***********************Yann **************************
-
-    def get_best_policies_final(self, best_policy, given_policy,_Uvec, _noise):
-
-        _V_best = best_policy
-        Q_best = self.get_initial_distribution().dot(_Uvec)
-        Q_best_index = given_policy[0]
-
-        for i in range(given_policy[1].shape[0]):
-            Q_best = map(operator.add, Q_best, given_policy[1][i,:])
-
-        if self.pareto_comparison(_V_best[1], Q_best):
-            return _V_best
-
-        if self.pareto_comparison(Q_best, _V_best[1]):
-            return (Q_best_index, Q_best)
-
-        if self.K_dominance_check(Q_best, _V_best[1]):
-            return (Q_best_index, Q_best)
-
-        elif self.K_dominance_check(_V_best[1], Q_best):
-            return _V_best
-
-        query = self.Query_policies(_V_best, (Q_best_index, Q_best), _noise)
-        self.query_counter_with_advantages+=1
-
-        return query
 
     def calculate_Uvec(self, index, cluster_policies, Uvec_old):
 
@@ -430,8 +357,6 @@ class Weng:
         optimal value solution of algorithm.
         """
 
-        sortie = open("delta_result"+".txt", "w")
-
         n, na, d= self.mdp.nstates , self.mdp.nactions, self.mdp.d
         Uvec_old_nd = np.zeros( (n,d) , dtype=ftype)
 
@@ -444,19 +369,11 @@ class Weng:
         for t in range(k):
             Uvec_nd = np.zeros((n,d), dtype=ftype)
 
-            print >> sortie,'************************'
-            print >> sortie, "iteratio t= ", t
-            sortie.flush()
-
             for s in range(n):
                 _V_best_d = np.zeros(d, dtype=ftype)
                 for a in range(na):
                     #compute Q function
                     Q_d       = self.mdp.get_vec_Q(s, a, Uvec_old_nd)
-
-                    print>> sortie, "Q_d,  _V_best_d, Q_d - _V_best_d", Q_d, _V_best_d, [0.0]+map(operator.sub, _V_best_d, Q_d)
-                    sortie.flush()
-
                     _V_best_d = self.get_best(_V_best_d, Q_d, _noise= noise)
 
                 Uvec_nd[s] = _V_best_d
@@ -794,11 +711,11 @@ class Weng:
         """
 
         d = self.mdp.d
-        matrix_nd = np.zeros( (self.n, d), dtype=ftype)
+        matrix_nd = np.zeros((self.n, d), dtype=ftype)
         v_d = np.zeros(d, dtype=ftype)
 
         #start with a random policy
-        policy_p = {s:[random.randint(0,self.na-1)] for s in range(self.n)}
+        policy_p = {s:[random.randint(0, self.na-1)] for s in range(self.n)}
         delta = 0.0
 
         queries = []
@@ -843,47 +760,6 @@ class Weng:
         return (list_v_d, self.Lambda_inequalities)
         #return (best_v_d, self.query_counter_with_advantages)
 
-    def value_iteration_with_advantages_final(self, _epsilon=0.001, k=100000, noise=None, cluster_error = 0.1, threshold = 0.001):
-
-        final = open("delta_result"+".txt", "w")
-
-        d = self.mdp.d
-        Uvec_old = np.zeros( (self.n, d), dtype=ftype)
-        Udot_old = np.zeros(d, dtype=ftype)
-
-        for t in range(k):
-
-            advantage_points_dic = self.mdp.calculate_advantages_labels(Uvec_old, True)
-            cluster_policies = self.accumulate_advantage_clusters_final(Uvec_old, advantage_points_dic, cluster_error)
-
-            print >> final, 'uvec_old', Uvec_old
-            print >> final, 'cluster_policies', cluster_policies
-
-            Q_best = self.get_initial_distribution().dot(Uvec_old)
-            for i in range(cluster_policies[1][1].shape[0]):
-                Q_best = map(operator.add, Q_best, cluster_policies[1][1][i,:])
-
-            index_policy_best = 1
-            Udot_policy_best = (index_policy_best, Q_best)
-
-            for i in range(2, len(cluster_policies[0])+1):
-                Udot_policy_best = self.get_best_policies_final(Udot_policy_best, (i, cluster_policies[1][i]),Uvec_old , noise)
-
-            Uvec_old = self.calculate_Uvec(Udot_policy_best[0], cluster_policies, Uvec_old)
-            Udot_new = Udot_policy_best[1]
-
-            delta = linfDistance([np.array(Udot_new)], [np.array(Udot_old)], 'chebyshev')[0,0]
-
-            print >> final, 'delta',delta
-
-            if delta < threshold:
-                return Udot_new
-            else:
-                Udot_old = Udot_new
-
-        print "Q_best_new", Udot_new
-        return Udot_new
-
 #**********************************************************************************
 
 def generate_inequalities(_d):
@@ -901,314 +777,3 @@ def interior_easy_points(dim):
     for i in range(dim):
         l.append(random.uniform(0.0, 1.0))
     return l
-
-def execution(_state, _action, _d, _noise):
-    final = open("result"+".txt", "w")
-    output = []
-
-    _Lambda_inequalities = generate_inequalities(_d)
-    _lambda_rand = interior_easy_points(_d)
-
-    _r = my_mdp.generate_random_reward_function(_state, _action, _d)
-    m = my_mdp.make_simulate_mdp_Yann(_state, _action, _lambda_rand, _r)
-    w = Weng(m, _lambda_rand, _Lambda_inequalities)
-    w.setStateAction()
-
-    start = timeit.default_timer()
-    val1 = w.value_iteration_weng(k=100000, noise= None,threshold= 0.00001)
-    stop = timeit.default_timer()
-
-    output.append(w.query_counter_)
-    output.append(stop-start)
-
-    _Lambda_inequalities = generate_inequalities(_d)
-    w.reset(m, _lambda_rand, _Lambda_inequalities)
-    start = timeit.default_timer()
-    val2 = w.value_iteration_weng(k=100000, noise= _noise, threshold= 0.0001)
-    stop = timeit.default_timer()
-
-    output.append(w.query_counter_)
-    output.append(stop-start)
-
-    _Lambda_inequalities = generate_inequalities(_d)
-    w.reset(m, _lambda_rand, _Lambda_inequalities)
-    start = timeit.default_timer()
-    val3 = w.value_iteration_with_advantages(_epsilon=0.001, k=100000, noise= None, cluster_error = 0.01, threshold = 0.0001)
-    stop = timeit.default_timer()
-
-    output.append(w.query_counter_with_advantages)
-    output.append(stop-start)
-
-    _Lambda_inequalities = generate_inequalities(_d)
-    w.reset(m, _lambda_rand, _Lambda_inequalities)
-    start = timeit.default_timer()
-    val4 = w.value_iteration_with_advantages(_epsilon=0.001,k=100000, noise=_noise, cluster_error= 0.01, threshold=0.0001)
-    stop = timeit.default_timer()
-
-    output.append(w.query_counter_with_advantages)
-    output.append(stop-start)
-
-    m.set_Lambda(_lambda_rand)
-    Uvec = m.policy_iteration()
-    exact = m.initial_states_distribution().dot(Uvec)
-
-    print >> final, "val1", val1
-    final.flush()
-
-    print >> final, "val2", val2
-    final.flush()
-
-    print >> final, "val3", val3
-    final.flush()
-
-
-    print >> final, "val4", val4
-    final.flush()
-
-    print >> final, 'exact', exact
-    final.flush()
-
-    output.append(l1distance(exact, val1[0]))
-    output.append(l1distance(exact, val2[0]))
-    output.append(l1distance(exact, val3[0]))
-    output.append(l1distance(exact, val4[0]))
-
-    return output
-
-
-
-
-
-
-
-
-
-if __name__ == '__main__':
-
-    def make_average_queries_errors(queries, errors):
-        """
-        it takes list of queries and errors of some iteration and make average on their values
-        :param queries: list
-        :param errors: list
-        :return: two lists: first is average on queries and second on related errors
-        """
-        average_queries = []
-        average_errors = []
-
-        max_index = max(max(i) for i in queries)
-
-        for j in range(max_index+1):
-                 which_index = [i.index(j) if (j in i) else "nothing" for i in queries]
-                 gather_errors = []
-                 sum = 0
-                 index_length = 0
-                 for k in range(len(which_index)):
-                     if which_index[k] != 'nothing':
-                         sum+= errors[k][which_index[k]]
-                         index_length += 1
-                         gather_errors.append(errors[k][which_index[k]])
-
-                 if index_length != 0:
-                     average_queries.append(j)
-                     average_on_errors = sum/len([t for t in which_index if t!= 'nothing'])
-                     average_errors.append(average_on_errors)
-
-        return (average_queries, average_errors)
-
-    iteration_overall = 10
-
-    _state = 3
-    _action = 2
-    _d = 2
-    _noise = 0.5
-
-    final = open("result-state"+".txt", "w")
-
-    queires_list_weng = []
-    errors_list_weng = []
-
-    queires_list_weng_noise = []
-    errors_list_weng_noise = []
-
-    queires_list_advantage = []
-    errors_list_advantage = []
-
-
-    queires_list_advantage_noise = []
-    errors_list_advantage_noise = []
-
-
-    _Lambda_inequalities = generate_inequalities(_d)
-    _lambda_rand = interior_easy_points(_d)
-
-    for i in range(iteration_overall):
-
-        _r = my_mdp.generate_random_reward_function(_state, _action, _d)
-        m = my_mdp.make_simulate_mdp_Yann(_state, _action, _lambda_rand, _r)
-        w = Weng(m, _lambda_rand, _Lambda_inequalities)
-        w.setStateAction()
-
-        m.set_Lambda(_lambda_rand)
-        Uvec = m.policy_iteration()
-        exact = m.initial_states_distribution().dot(Uvec)
-
-        val1 = w.value_iteration_weng(k=100000, noise= None, threshold = 0.0001)
-        list_V_d = val1[0]
-        queries = val1[1]
-
-        queires_list_weng.append(queries)
-        error = [linfDistance([np.array(list_V_d[i])], [np.array(exact)], 'chebyshev')[0,0] for i in range(len(queries))]
-        errors_list_weng.append(error)
-
-        _Lambda_inequalities = generate_inequalities(_d)
-        w.reset(m, _lambda_rand, _Lambda_inequalities)
-        val2 = w.value_iteration_weng(k=100000, noise= _noise, threshold= 0.0001)
-        list_V_d_2 = val2[0]
-        queries_2 = val2[1]
-
-        queires_list_weng_noise.append(queries_2)
-        error_2 = [linfDistance([np.array(list_V_d_2[i])], [np.array(exact)], 'chebyshev')[0,0] for i in range(len(queries_2))]
-        errors_list_weng_noise.append(error_2)
-
-        _Lambda_inequalities = generate_inequalities(_d)
-        w.reset(m, _lambda_rand, _Lambda_inequalities)
-        val3 = w.value_iteration_with_advantages(_epsilon=0.001, k=100000, noise= None, cluster_error = 0.01, threshold = 0.0001)
-        list_V_d_3 = val3[0]
-        queries_3 = val3[1]
-
-        queires_list_advantage.append(queries_3)
-        error_3 = [linfDistance([np.array(list_V_d_3[i])], [np.array(exact)], 'chebyshev')[0,0] for i in range(len(queries_3))]
-        errors_list_advantage.append(error_3)
-
-        _Lambda_inequalities = generate_inequalities(_d)
-        w.reset(m, _lambda_rand, _Lambda_inequalities)
-        val4 = w.value_iteration_with_advantages(_epsilon=0.001, k=100000, noise= _noise, cluster_error = 0.01, threshold = 0.0001)
-        list_V_d_4 = val4[0]
-        queries_4 = val4[1]
-
-        queires_list_advantage_noise.append(queries_4)
-        error_4 = [linfDistance([np.array(list_V_d_4[i])], [np.array(exact)], 'chebyshev')[0,0] for i in range(len(queries_4))]
-        errors_list_advantage_noise.append(error_4)
-
-
-    print >> final, "******************* weng with NO noise ********************"
-    results = make_average_queries_errors(queires_list_weng, errors_list_weng)
-    print >> final, "average on queries", results[0]
-    final.flush()
-    print >> final, "average on errors", results[1]
-    final.flush()
-
-    print >> final, "******************* weng with YES noise ********************"
-    results = make_average_queries_errors(queires_list_weng_noise, errors_list_weng_noise)
-    print >> final, "average on queries", results[0]
-    final.flush()
-    print >> final, "average on errors", results[1]
-    final.flush()
-
-    print >> final, "******************* Advantage with NO noise ********************"
-    results = make_average_queries_errors(queires_list_advantage, errors_list_advantage)
-    print >> final, "average on queries", results[0]
-    final.flush()
-    print >> final, "average on errors", results[1]
-    final.flush()
-
-    print >> final, "******************* Advantage with YES noise ********************"
-    results = make_average_queries_errors(queires_list_advantage_noise, errors_list_advantage_noise)
-    print >> final, "average on queries", results[0]
-    final.flush()
-    print >> final, "average on errors", results[1]
-    final.flush()
-
-
-
-#
-# if __name__ == '__main__':
-#
-#         na=2
-#         d = 2
-#         noise= 0.5
-#
-#         final = open("result-state"+".txt", "w")
-#
-#         for s in range(3, 4, 1):
-#
-#             number_asked_queries_weng_nonoise = []
-#             time_weng_nonoise=[]
-#             error_weng_nonoise =[]
-#
-#             number_asked_queries_weng_noise=[]
-#             time_weng_noise = []
-#             error_weng_noise = []
-#             #****************************
-#             number_asked_queries_nonoise = []
-#             time_nonoise = []
-            # error_nonoise = []
-            #
-            # number_asked_queries_noise = []
-            # time_noise = []
-            # error_noise = []
-            #
-            # for i in range(1):
-            #     result = execution(s, na, d, noise)
-            #
-            #     if len(result) == 12:
-            #         number_asked_queries_weng_nonoise.append(result[0])
-            #         time_weng_nonoise.append(result[1])
-            #         error_weng_nonoise.append(result[8])
-            #
-            #         number_asked_queries_weng_noise.append(result[2])
-            #         time_weng_noise.append(result[3])
-            #         error_weng_noise.append(result[9])
-            #         #****************************
-            #         number_asked_queries_nonoise.append(result[4])
-            #         time_nonoise.append(result[5])
-            #         error_nonoise.append(result[10])
-            #
-            #         number_asked_queries_noise.append(result[6])
-            #         time_noise.append(result[7])
-            #         error_noise.append(result[11])
-            #     else:
-            #         assert "result length is not 12!!!!!!"
-            #
-            # print >> final, "*******************************************************"
-            # final.flush()
-            # print >> final, "state = ", s, " action=", na, " d=", d, " noise=", noise
-            # final.flush()
-            #
-            #
-            # print >> final, "number_asked_queries_weng_nonoise", np.mean(number_asked_queries_weng_nonoise)
-            # final.flush()
-            # print >> final, "time_weng_nonoise", np.mean(time_weng_nonoise)
-            # final.flush()
-            # print >> final, "error_weng_nonoise", np.mean(error_weng_nonoise)
-            # final.flush()
-            #
-            # print >> final, '------------------'
-            # final.flush()
-            #
-            # print >> final, "number_asked_queries_weng_noise",np.mean(number_asked_queries_weng_noise)
-            # final.flush()
-            # print >> final, "time_weng_noise", np.mean(time_weng_noise)
-            # final.flush()
-            # print >> final,"error_weng_noise", np.mean(error_weng_noise)
-            # final.flush()
-            #
-            # print >> final, '*************'
-            # final.flush()
-            #
-            # print >> final,"number_asked_queries_nonoise", np.mean(number_asked_queries_nonoise)
-            # final.flush()
-            # print >> final, "time_nonoise", np.mean(time_nonoise)
-            # final.flush()
-            # print >> final, "error_nonoise", np.mean(error_nonoise)
-            # final.flush()
-            #
-            # print >> final, '------------------'
-            # final.flush()
-            #
-            # print >> final, "number_asked_queries_noise", np.mean(number_asked_queries_noise)
-            # final.flush()
-            # print >> final, "time_noise", np.mean(time_noise)
-            # final.flush()
-            # print >> final, "error_noise", np.mean(error_noise)
-            # final.flush()

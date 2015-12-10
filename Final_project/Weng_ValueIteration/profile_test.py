@@ -1,6 +1,12 @@
+import copy
 import pylab as plt
-from ValueIteration import *
+import ValueIteration
+import numpy as np
 
+import sys
+sys.path.insert(0, '/Users/pegah/Dropbox/GitHub-Projects/Advance-Project/Final_project')
+
+import Regan.my_mdp
 
 
 n=11
@@ -80,15 +86,15 @@ if __name__ == '__main__':
     erro_average_weng = []
     query_average_weng = []
 
-    _state, _action, _d = 5, 2, 2
+    _state, _action, _d = 5, 3, 4
 
-    for iteration in range(3):
+    for iteration in range(1):
 
-        _Lambda_inequalities = generate_inequalities(_d)
-        _lambda_rand = interior_easy_points(_d)
+        _Lambda_inequalities = ValueIteration.generate_inequalities(_d)
+        _lambda_rand = ValueIteration.interior_easy_points(_d)
 
-        m = my_mdp.make_simulate_mdp_Yann(_state, _action, _lambda_rand, None)
-        w = Weng(m, _lambda_rand, _Lambda_inequalities)
+        m = Regan.my_mdp.make_simulate_mdp_Yann(_state, _action, _lambda_rand, None)
+        w = ValueIteration.Weng(m, _lambda_rand, _Lambda_inequalities)
         w.setStateAction()
 
         m.set_Lambda(_lambda_rand)
@@ -101,7 +107,7 @@ if __name__ == '__main__':
         output = w.value_iteration_with_advantages(_epsilon=0.001, k=100000, noise= 0.5,
                                                    cluster_error = 0.01, threshold = 0.0001)
 
-        _Lambda_inequalities = generate_inequalities(_d)
+        _Lambda_inequalities = ValueIteration.generate_inequalities(_d)
         w.reset(m, _lambda_rand, _Lambda_inequalities)
         #output_weng = w.value_iteration_weng(k=100000, noise=None, threshold=0.0001)
         output_weng = w.value_iteration_weng(k=100000, noise=0.5, threshold=0.0001)
@@ -115,12 +121,12 @@ if __name__ == '__main__':
 
         graph_weng = []
         for i in output_weng[0]:
-                differenece = linfDistance([np.array(i)], [np.array(exact)], 'chebyshev')[0,0]
+                differenece = ValueIteration.linfDistance([np.array(i)], [np.array(exact)], 'chebyshev')[0,0]
                 graph_weng.append(differenece)
 
         graph_ma = []
         for i in output[0]:
-                differenece = linfDistance([np.array(i)], [np.array(exact)], 'chebyshev')[0,0]
+                differenece = ValueIteration.linfDistance([np.array(i)], [np.array(exact)], 'chebyshev')[0,0]
                 graph_ma.append(differenece)
 
         erro_average_ma.append(graph_ma)
@@ -180,4 +186,5 @@ if __name__ == '__main__':
 
     ax.plot(sort1[0], sort1[1] ,'b')
     ax.plot(sort2[0], sort2[1] ,'r')
-    plt.show()
+    #plt.show()
+    plt.savefig('exit.pdf')
