@@ -1,16 +1,18 @@
 import copy
-import timeit
 import operator
 from operator import add
 import random
 import cplex
 import itertools
 import numpy as np
+#from pulp import pulp
 from scipy.spatial import ConvexHull
 import collections
 import scipy.spatial.qhull
 import scipy.cluster.hierarchy as hac
 
+from matplotlib import pyplot
+from Tkinter import *
 
 try:
     from scipy.sparse import csr_matrix, dok_matrix
@@ -53,9 +55,13 @@ class Weng:
         return self.mdp.initial_states_distribution()
 
     def get_Lambda(self):
-        return self.Lambda
+        return self.mdp.get_lambda()
+        
+    def get_initial_distribution(self):
+        return self.mdp.initial_states_distribution()        return self.Lambda
 
-#**************************************************
+    def get_initial_distribution(self):
+        return self.mdp.initial_states_distribution()#**************************************************
 
     def pareto_comparison(self, a, b):
         a = np.array(a, dtype= ftype)
@@ -76,14 +82,39 @@ class Weng:
         #print "--before-- ",json.dumps(self.Lambda_inequalities)
 
         #c = self.feasibility_K_dominance_check(_V_best,Q)
-        p = self. K_dominance_check(_V_best,Q)
+        #p = self.cplex_K_dominance_check(_V_best,Q)
+        p = self.cplex_K_dominance_check(_V_best,Q)
         #assert p == c , "alert: pulp and feasibility disagree !!!"
 
         #print "--after-- ",json.dumps([self.Lambda_inequalities,( _V_best.tolist(), Q.tolist()),p]),","
 
         return p
 
-    def K_dominance_check(self, _V_best, Q):
+    # def pulp_K_dominance_check(self, _V_best,Q):
+    #     ineq = self.Lambda_inequalities
+    #     _d = len(_V_best)
+    #
+    #     prob = pulp.LpProblem("Ldominance", pulp.LpMinimize)
+    #     lambda_variables = pulp.LpVariable.dicts("l", range(_d),lowBound=0.0, upBound=1.0)
+    #
+    #     for inequ in ineq:
+    #         prob += pulp.lpSum([inequ[j + 1] * lambda_variables[j] for j in range(0, _d)]) + inequ[0] >= 0
+    #
+    #     prob += pulp.lpSum([lambda_variables[i] * (_V_best[i]-Q[i]) for i in range(_d)])
+    #
+    #     prob.writeLP("show-pulp.lp")
+    #
+    #     status = prob.solve()
+    #     #LpStatus[status]
+    #
+    #     result = pulp.value(prob.objective)
+    #
+    #     if result < 0.0:
+    #         return False
+    #
+    #     return True
+
+    def cplex_K_dominance_check(self, _V_best, Q):
 
         ineqList = self.Lambda_inequalities
         _d = len(_V_best)
@@ -216,9 +247,8 @@ class Weng:
         return False
 
     def Query(self, _V_best, Q, noise):
-        bound = [0.0]
 
-        noisy = open("noisy"+".txt", "w")
+        bound = [0.0]
 
         if not noise:
             if self.Lambda.dot(_V_best) > self.Lambda.dot(Q):
@@ -247,7 +277,7 @@ class Weng:
                 self.Lambda_inequalities.append( bound+map(operator.sub, Q, _V_best))
                 return Q
 
-        return None
+        #return None
 
     def Query_policies(self,_V_best, Q, noise):
         bound = [0.0]
@@ -292,11 +322,13 @@ class Weng:
         if self.pareto_comparison(Q, _V_best):
             return Q
 
+
         if self.K_dominance_check(Q, _V_best):
             return Q
 
         elif self.K_dominance_check(_V_best, Q):
             return _V_best
+
 
         query = self.Query(_V_best, Q, _noise)
         #if this query is asked for value iteration with advantages
@@ -347,7 +379,8 @@ class Weng:
 
         return New_Uvec_Old
 
-    def value_iteration_weng(self, k=100000, noise= None, threshold= 0.001):
+    #def value_iteration_weng(self, k=100000, noise= None, threshold= 0.001, exact):
+    def value_iteration_weng(self, k, noise, threshold, exact):
         """
         this function find the optimal v_bar of dimension d using Interactive value iteration method
         :param k: max number of iteration
@@ -357,7 +390,13 @@ class Weng:
         optimal value solution of algorithm.
         """
 
-        n, na, d= self.mdp.nstates , self.mdp.nactions, self.mdp.d
+        obs = open("observe-search" + ".txt", "w")
+        print >> obs, '***************************'
+
+        gather_query = []
+        gather_diff = []
+
+        n, na, d =self.mdp.nstates , self.mdp.nactions, self.mdp.d
         Uvec_old_nd = np.zeros( (n,d) , dtype=ftype)
 
         delta = 0.0
@@ -382,6 +421,14 @@ class Weng:
             Uvec_old_d = self.get_initial_distribution().dot(Uvec_old_nd)
             delta = linfDistance([np.array(Uvec_final_d)], [np.array(Uvec_old_d)], 'chebyshev')[0,0]
 
+            gather_query.append(self.query_counter_)
+            gather_diff.append(abs( sum(a*b for a,b in zip(list(self.get_Lambda()), list(Uvec_final_d))) - \
+                         sum(a*b for a,b in zip(list(self.get_Lambda()), list(exact)))) )
+
+            print >> obs,'delta', delta, "      query", self.query_counter_, \
+                "   difference      ",linfDistance([np.array(Uvec_final_d)], [np.array(exact)], 'chebyshev')[0,0]
+            obs.flush()
+
             if query_count != self.query_counter_:
                 queries.append(query_count)
                 vector_list_d.append(Uvec_old_d)
@@ -390,7 +437,7 @@ class Weng:
             if delta <threshold:
                 queries.append(query_count)
                 vector_list_d.append(Uvec_final_d)
-                return(vector_list_d, self.Lambda_inequalities)
+                return(vector_list_d, self.Lambda_inequalities, gather_query, gather_diff, Uvec_final_d)
                 #return (vector_list_d, queries)
                 #return (Uvec_final_d, self.query_counter_)
             else:
@@ -398,7 +445,7 @@ class Weng:
 
         queries.append(query_count)
         vector_list_d.append(Uvec_final_d)
-        return(vector_list_d, self.Lambda_inequalities)
+        return(vector_list_d, self.Lambda_inequalities, gather_query, gather_diff,Uvec_final_d )
         #return (vector_list_d, queries)
         #return (Uvec_final_d, self.query_counter_)
 
@@ -457,13 +504,16 @@ class Weng:
             points_array[counter] = val
             dic_labels[counter] = key
             counter += 1
-
+        #if points_array.size != 0:
         z = hac.linkage(points_array, metric='cosine', method='complete')
         tol = -1e-16
         z.real[z.real < tol] = 0.0
         labels = hac.fcluster(z, _cluster_error, criterion='distance')
 
-        for la in range(1,max(labels)+1):
+        #pyplot.scatter(points_array[:,0], points_array[:,1], c=labels)
+        #pyplot.show()
+
+        for la in range(1, max(labels)+1):
             cluster_advantages_dic.setdefault(la, {})
 
         for index, label in enumerate(labels):
@@ -519,6 +569,10 @@ class Weng:
         #change dictionary types to array and extract lists without their (s,a) pairs
         _points = []
         _pairs = []
+
+        diclist = []
+        for key, val in _dic.iteritems():
+            diclist.append((key, val))
 
         if _label== 'V':
             for val in _dic.itervalues():
@@ -610,10 +664,13 @@ class Weng:
 
                 if selected_pairs:
                     pair_index = random.choice(selected_pairs)
+                    #pair_index = min(selected_pairs)
                     sum_d = map(add, sum_d, val[1][pair_index])
                     pairs_list.append(val[0][pair_index])
 
             final_dic[key] = (pairs_list, sum_d)
+
+
 
         for k,v in final_dic.iteritems():
             dic_clusters_sum_v_old[k] = (v[0], map(add, self.get_initial_distribution().dot(_matrix_nd), v[1]))
@@ -634,6 +691,9 @@ class Weng:
                 value is a pair like: ([(0, 1), (2, 0), (0, 0), (2, 1)], [0.0, 0.73071181774139404]) which first element
                 are pairs and second element is sum on all related vectors + beta._matrix_nd
         """
+
+        print '---------inside accumulate advantage cluster --------------'
+
         clustered_advantages= self.cluster_cosine_similarity(_advantages, _cluster_error)
         convex_hull_clusters = {}
 
@@ -644,7 +704,6 @@ class Weng:
         if bool(convex_hull_clusters):
             cluster_pairs_vectors = self.justify_cluster(convex_hull_clusters, clustered_advantages)
             sum_on_convex_hull_temp = self.sum_cluster_and_matrix(cluster_pairs_vectors, _matrix_nd)
-
             #sum_on_convex_hull_temp = {key: (val[0], self.sum_advantages(_matrix_nd, val[1])) for key, val in cluster_pairs_vectors.iteritems()}
             sum_on_convex_hull = {key:val for key,val in sum_on_convex_hull_temp.iteritems() if val[1]}
             return sum_on_convex_hull
@@ -684,11 +743,11 @@ class Weng:
                 tempo = [item[1] for item in policy[0] if item[0] == key]
                 if tempo:
                     _pi_p[key] = tempo
-                else:
-                    adv_d = self.get_initial_distribution()[key]*(self.mdp.get_vec_Q(key, _pi_old[key][0],  matrix_nd)-matrix_nd[key])
-                    V_append_d = operator.add(V_append_d, adv_d)
+                #else:
+                #    adv_d = self.get_initial_distribution()[key]*(self.mdp.get_vec_Q(key, _pi_old[key][0],  matrix_nd)-matrix_nd[key])
+                #    V_append_d = operator.add(V_append_d, adv_d)
 
-            V_append_d = np.zeros(self.mdp.d, dtype=ftype)
+            #V_append_d = np.zeros(self.mdp.d, dtype=ftype)
 
             new_policies[k] = (_pi_p,np.float32(operator.add(policy[1], V_append_d)) ) #np.float32(policy[1]))
             _pi_p = copy.deepcopy(_pi_old)
@@ -696,7 +755,8 @@ class Weng:
         return new_policies
 
     # _n=True comparisons are depend on uncertain user
-    def value_iteration_with_advantages(self, _epsilon=0.001, k=100000, noise=None, cluster_error = 0.1, threshold = 0.001):
+    #def value_iteration_with_advantages(self, _epsilon=0.001, k=100000, noise=None, cluster_error = 0.1, threshold = 0.001):
+    def value_iteration_with_advantages(self, _epsilon, k, noise, cluster_error, threshold, exact):
 
         """
         compute value iteration use clustering on advantages
@@ -710,35 +770,74 @@ class Weng:
         :returns: pair of the best value iteration response: best vector of dimension d and equal matrix of dimension nxd
         """
 
+        obs = open("observe-search" + ".txt", "w")
+        print >> obs, '****************************'
+
+        gather_query = []
+        gather_diff = []
+
         d = self.mdp.d
         matrix_nd = np.zeros((self.n, d), dtype=ftype)
         v_d = np.zeros(d, dtype=ftype)
 
         #start with a random policy
-        policy_p = {s:[random.randint(0, self.na-1)] for s in range(self.n)}
+        best_p_and_v_d = ({s:[random.randint(0, self.na-1)] for s in range(self.n)}, np.zeros(d, dtype=ftype))
+        #best_p_and_v_d = ({0: [3], 1: [3], 2: [3], 3: [3]}, np.zeros(d, dtype=ftype))
+        #best_p_and_v_d = ({s:[self.na-1] for s in range(self.n)}, np.zeros(d, dtype=ftype))
+
+        print "best_p_and_v_d", best_p_and_v_d
+
         delta = 0.0
 
         queries = []
         list_v_d = []
         query_count = 0
 
+        #k=3
         for t in range(k):
-            best_p_and_v_d = ({s:random.randint(0,self.na-1) for s in range(self.n)}, np.zeros(d, dtype=ftype))
+            print '****** t=', t, "***************"
 
             advantages_pair_vector_dic = self.mdp.calculate_advantages_labels(matrix_nd, True)
+
+            print 'advantages_pair_vector_dic', advantages_pair_vector_dic
+            print 'len(advantages_pair_vector_dic)', len(advantages_pair_vector_dic)
+
             cluster_advantages = self.accumulate_advantage_clusters(matrix_nd, advantages_pair_vector_dic, cluster_error)
-            policies = self.declare_policies(cluster_advantages, policy_p, matrix_nd)
+
+            print "cluster_advantages", cluster_advantages
+
+            policies = self.declare_policies(cluster_advantages, best_p_and_v_d[0], matrix_nd)
 
             for val in policies.itervalues():
                 best_p_and_v_d = self.get_best_policies(best_p_and_v_d, val, noise)
 
-            matrix_nd = self.mdp.update_matrix(policy_p=best_p_and_v_d[0], _Uvec_nd= matrix_nd)
+            # root = Tk()
+            # T = Text(root, height=100, width=100)
+            # T.pack()
+            # T.insert(END, 'list of policies'+str(policies)+ '\n best_p_and_v_d' + str(best_p_and_v_d) )
+            # mainloop()
 
-            policy_p = best_p_and_v_d[0]
+            print 'list of policies', policies
+            print 'best_p_and_v_d', best_p_and_v_d
+
+            matrix_nd = self.mdp.update_matrix(policy_p=best_p_and_v_d[0], _Uvec_nd= matrix_nd)
             best_v_d = best_p_and_v_d[1]
             #best_v_d = self.get_initial_distribution().dot(matrix_nd)
 
+            print 'best_v_d', best_v_d
+            print 'difference', linfDistance([np.array(best_v_d)], [np.array(exact)], 'chebyshev')[0,0]
+
+            print "*************************"
+
             delta = linfDistance([np.array(best_v_d)], [np.array(v_d)], 'chebyshev')[0,0]
+
+            gather_query.append(self.query_counter_with_advantages)
+            gather_diff.append(abs( sum(a*b for a,b in zip(list(self.get_Lambda()), list(best_v_d))) - \
+                         sum(a*b for a,b in zip(list(self.get_Lambda()), list(exact))) ) )
+
+            print >> obs,'delta', delta, "      query", self.query_counter_with_advantages,\
+                "    difference",linfDistance([np.array(best_v_d)], [np.array(exact)], 'chebyshev')[0,0], \
+            obs.flush()
 
             if query_count!= self.query_counter_with_advantages:
                 queries.append(query_count)
@@ -749,7 +848,8 @@ class Weng:
                 queries.append(query_count)
                 list_v_d.append(best_v_d)
                 #return (list_v_d, queries)
-                return (list_v_d, self.Lambda_inequalities)
+                print "best_p_and_v_d", best_p_and_v_d
+                return (list_v_d, self.Lambda_inequalities, gather_query , gather_diff, best_v_d)
                 #return (best_v_d, self.query_counter_with_advantages)
             else:
                 v_d = best_v_d
@@ -757,7 +857,8 @@ class Weng:
         queries.append(query_count)
         list_v_d.append(best_v_d)
         #return (list_v_d, queries)
-        return (list_v_d, self.Lambda_inequalities)
+        print "best_p_and_v_d", best_p_and_v_d
+        return (list_v_d, self.Lambda_inequalities, gather_query, gather_diff, best_v_d)
         #return (best_v_d, self.query_counter_with_advantages)
 
 #**********************************************************************************
